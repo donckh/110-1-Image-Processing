@@ -1,0 +1,4 @@
+Reference canny:
+Gaussian Filter: 3
+High: 130
+Low: 60

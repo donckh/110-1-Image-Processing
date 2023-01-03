@@ -1,0 +1,429 @@
+import itertools
+import math
+import tkinter as tk
+from PIL import Image, ImageTk
+import math as m
+import numpy as np
+import copy
+import cv2
+from tkinter import filedialog
+
+
+# create a layout
+def define_layout(obj, cols=1, rows=1):
+    def method(trg, col, row):
+
+        for c in range(cols):
+            trg.columnconfigure(c, weight=1)
+        for r in range(rows):
+            trg.rowconfigure(r, weight=1)
+
+    if type(obj) == list:
+        [method(trg, cols, rows) for trg in obj]
+    else:
+        trg = obj
+        method(trg, cols, rows)
+
+
+# open file
+def openfn():
+    filename = filedialog.askopenfilename(title='open')
+    return filename
+
+
+# open image
+def open_img_left():
+    x = openfn()
+    img = Image.open(x)
+    img = img.resize((img_before_size[1], img_before_size[0]), Image.ANTIALIAS)
+    img = ImageTk.PhotoImage(img)
+    panel = tk.Label(div2, image=img)
+    panel.image = img
+    panel.grid(column=1, row=1, sticky=align_mode)
+
+
+def open_img_right():
+    x = openfn()
+    img = Image.open(x)
+    img = img.resize((img_after_size[1], img_after_size[0]), Image.ANTIALIAS)
+    img = ImageTk.PhotoImage(img)
+    panel = tk.Label(div3, image=img)
+    panel.image = img
+    panel.grid(column=1, row=1, sticky=align_mode)
+
+
+# test input scale function including gaussian size and thresholds
+def s_print(text):  # print scale variable
+    print('Gaussian Filter:', value1.get(), 'High threshold:', value3.get(), 'Low threshold:', value4.get())
+
+
+# create a window
+window = tk.Tk()
+window.title('Canny Edge')
+align_mode = 'nswe'
+pad = 5
+
+# create a scale bar value for initial
+value1 = tk.IntVar()
+value2 = tk.IntVar()
+value3 = tk.IntVar()
+value4 = tk.IntVar()
+
+# input image path
+read_image_before = './pic4PR2/CT.jpg'  # read image you would like to process, can be changed
+write_image_before = "CT_gray.png"  # write image you would like to process, can be changed
+read_image_after = './CT_gray.png'  # preview gray image you would like to process, can be changed
+
+# read image
+image_before = cv2.imread(read_image_before)
+img_before_gray = cv2.cvtColor(image_before, cv2.COLOR_RGB2GRAY)
+arr = np.array(img_before_gray)
+img_before_size = arr.shape
+cv2.imwrite(write_image_before, img_before_gray)
+
+image_after = copy.deepcopy(image_before)
+img_after_temp = copy.deepcopy(image_before)
+img_after_size = img_before_size
+
+# grid the testing window layout
+div_size = 200
+div1 = tk.Frame(window, width=img_before_size[1], height=div_size, bg='blue')  # bg='blue'
+div4 = tk.Frame(window, width=img_before_size[1], height=div_size)  # bg='yellow'
+div2 = tk.Frame(window, width=img_before_size[1], height=img_before_size[0], bg='orange')
+div3 = tk.Frame(window, width=img_after_size[1], height=img_after_size[0], bg='green')
+
+window.update()
+win_size = min(window.winfo_width(), window.winfo_height())
+# print(win_size)
+
+div1.grid(column=0, row=0, padx=pad, pady=pad, sticky=align_mode)
+div4.grid(column=1, row=0, padx=pad, pady=pad, sticky=align_mode)
+div2.grid(column=0, row=1, padx=pad, pady=pad, rowspan=2, sticky=align_mode)
+div3.grid(column=1, row=1, padx=pad, pady=pad, rowspan=2, sticky=align_mode)
+
+define_layout(window, cols=2, rows=2)
+define_layout([div1, div2, div3, div4])
+
+im = Image.open(write_image_before)  # read original image
+imTK_L = ImageTk.PhotoImage(im.resize((img_before_size[1], img_before_size[0])))
+
+image_main = tk.Label(div2, image=imTK_L)
+image_main['height'] = img_before_size[0]
+image_main['width'] = img_before_size[1]
+
+image_main.grid(column=0, row=1, sticky=align_mode)
+image_main.grid(column=1, row=1, sticky=align_mode)
+
+define_layout(window, cols=3, rows=3)
+define_layout(div1)
+define_layout(div4)
+define_layout(div2, rows=2)
+define_layout(div3, rows=2)
+
+# read image in right hand side
+im = Image.open(read_image_after)
+imTK_R = ImageTk.PhotoImage(im.resize((img_after_size[1], img_after_size[0])))
+
+image_main = tk.Label(div3, image=imTK_R)
+image_main['height'] = img_after_size[0]
+image_main['width'] = img_after_size[1]
+image_main.grid(column=0, row=1, sticky=align_mode)
+image_main.grid(column=1, row=1, sticky=align_mode)
+
+
+# filter design
+def initial_filter(fNum):
+    filter_size = []
+    for i in range(fNum):
+        filter_size.append([0.0] * fNum)
+    fil = np.array(filter_size)
+    return fil
+
+
+# create a gaussian filter
+def gaussian_filter_creator():
+    sum_of_filter = 0
+    gaussian_size = int(value1.get())  # gaussain filter size(3) can be changed to value1.get()
+    matrix_var = int(gaussian_size / 2)
+    initial_gaussian_filter = initial_filter(gaussian_size)
+    for i, j in itertools.product(range(gaussian_size), range(gaussian_size)):
+        initial_gaussian_filter[i][j] = m.exp(-((-matrix_var + i) ** 2 + (-matrix_var + j) ** 2))
+        sum_of_filter = initial_gaussian_filter[i][j] + sum_of_filter
+    normalize_gaussian_filter = initial_gaussian_filter / sum_of_filter
+    print('done Gaussian')
+    return normalize_gaussian_filter
+
+
+def conv_full_image(img, fil):
+    temp = []
+    img_temp = copy.deepcopy(img)
+    img_new_c = np.zeros(img.shape[0] * img.shape[1])
+    img_new_c = img_new_c.reshape(img.shape[0], img.shape[1])
+    img_size = img.shape
+    fil_size = fil.shape
+    for i in range(img_size[0]):
+        for j in range(img_size[1]):
+            img_new_c = conv(img_new_c, img_temp, img_size, fil, fil_size, temp, i, j)
+
+    return img_new_c
+
+
+def conv(img_new_c, img_temp_c, img_size_c, fil, fil_size, temp, i, j):
+    if fil_size[0] % 2 != 0:
+        for ii in range(fil_size[0]):
+            if i + fil_size[0] < img_size_c[0]:
+                for jj in range(fil_size[1]):
+                    if j + fil_size[1] < img_size_c[1]:
+                        temp.append(img_temp_c[i + ii][j + jj] * fil[ii][jj])
+                    else:
+                        break
+            else:
+                break
+
+        temp_sum = np.sum(temp)
+
+        cen_pointx = int(fil_size[0] / 2)
+        cen_pointy = int(fil_size[1] / 2)
+        num = int(temp_sum)
+        if (i + fil_size[0] < img_size_c[0]) and (j + fil_size[1] < img_size_c[1]):
+            img_new_c[i + cen_pointx][j + cen_pointy] = num
+        temp.clear()
+    return img_new_c
+
+
+def sobel_filter(phase):
+    if phase > 112.5:  # 135 degree
+        sobel_fil = [[2, 1, 0], [1, 0, -1], [0, -2, -1]]
+    elif phase > 67.5:  # 90 degree
+        sobel_fil = [[1, 2, 1], [0, 0, 0], [-1, -2, -1]]
+    elif phase > 22.5:  # 45 degree
+        sobel_fil = [[0, 1, 2], [-1, 0, 1], [-2, -1, 0]]
+    else:  # 0 degree
+        sobel_fil = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
+
+    sobel_fil = np.array(sobel_fil)
+    return sobel_fil
+
+
+def sobel_calculation(image_x, image_y):
+    image_combine = np.zeros(image_x.shape[0] * image_x.shape[1])
+    image_combine = image_combine.reshape(image_x.shape[0], image_x.shape[1])
+    theta = np.zeros(image_x.shape[0] * image_x.shape[1])
+    theta = theta.reshape(image_x.shape[0], image_x.shape[1])
+    for i, j in itertools.product(range(image_x.shape[0]), range(image_x.shape[1])):
+        theta[i][j] = math.atan2(image_y[i][j], image_x[i][j]) * 180 / math.pi
+        theta[i][j] = theta[i][j] % 180
+        if theta[i][j] > 112.5:
+            theta[i][j] = 135
+        elif theta[i][j] > 67.5:
+            theta[i][j] = 90
+        elif theta[i][j] > 22.5:
+            theta[i][j] = 45
+        else:
+            theta[i][j] = 0
+        image_combine[i][j] = int(math.sqrt(image_x[i][j] ** 2 + image_y[i][j] ** 2))
+    # for i, j in itertools.product(range(image_x.shape[0]), range(image_x.shape[1])):
+    #     image_combine[i][j] = int(image_combine[i][j] / np.max(image_combine) * 255)  # normalize
+    print('np.max(image):', np.max(image_combine))
+    print('done sobel_calculation')
+    return image_combine, theta
+
+
+def smooth_filter_creator():
+    average_of_filter = value1.get() * value1.get()
+    smooth_size = int(value1.get())  # gaussain filter size(3) can be changed to value1.get()
+    matrix_var = int(smooth_size / 2)
+    initial_smooth_filter = initial_filter(smooth_size)
+    final_smooth_filter = initial_filter(smooth_size)
+    for i, j in itertools.product(range(smooth_size), range(smooth_size)):
+        final_smooth_filter[i][j] = (initial_smooth_filter[i][j] + 1) / average_of_filter
+    print('done Smooth')
+    return final_smooth_filter
+
+
+def sharpen_filter(source_image):
+    smooth_filter = smooth_filter_creator()
+    smooth_filter_size = smooth_filter.shape
+    print('smooth_filter:', smooth_filter_size, 'sum:', np.sum(smooth_filter))
+    img_after_smooth = conv_full_image(source_image, smooth_filter)
+    image_after_sharpen = np.zeros(source_image.shape[0] * source_image.shape[1])
+    image_after_sharpen = image_after_sharpen.reshape(source_image.shape[0], source_image.shape[1])
+    for i in range(source_image.shape[0]):
+        for j in range(source_image.shape[1]):
+            image_after_sharpen[i][j] = int(source_image[i][j]) - int(img_after_smooth[i][j])
+            if image_after_sharpen[i][j] < 0:  # confirm the value will not less than zero
+                image_after_sharpen[i][j] = 0
+
+    return image_after_sharpen
+
+
+def canny_edge_detector(image_source, canny_theta):
+    canny_image = copy.deepcopy(image_source)
+    for i, j in itertools.product(range(canny_theta.shape[0]), range(canny_theta.shape[1])):
+        if (i + 1) < canny_image.shape[0] and (j + 1) < canny_image.shape[1]:
+            if canny_theta[i][j] > 112.5:  # 135 degree, compare two dimension value with core one
+                if image_source[i][j] < image_source[i - 1][j - 1] or \
+                        image_source[i][j] < image_source[i + 1][j + 1]:
+                    canny_image[i][j] = 0
+            elif canny_theta[i][j] > 67.5:  # 90 degree
+                if image_source[i][j] < image_source[i - 1][j] or \
+                        image_source[i][j] < image_source[i + 1][j]:
+                    canny_image[i][j] = 0
+
+            elif canny_theta[i][j] > 22.5:  # 45 degree
+                if image_source[i][j] < image_source[i + 1][j - 1] or \
+                        image_source[i][j] < image_source[i - 1][j + 1]:
+                    canny_image[i][j] = 0
+
+            else:  # 0 degree
+                if image_source[i][j] < image_source[i - 1][j - 1] or \
+                        image_source[i][j] < image_source[i + 1][j + 1]:
+                    canny_image[i][j] = 0
+    print('done canny_edge_detector')
+    return canny_image
+
+
+def canny_edge_threshold(source_image, high_threshold, low_threshold, filter_in):
+    canny_image = np.zeros(source_image.shape[0] * source_image.shape[1])
+    canny_image = canny_image.reshape(source_image.shape[0], source_image.shape[1])
+    print('high_threshold:', high_threshold, 'low_threshold', low_threshold)
+    count = 0
+    for i, j in itertools.product(range(source_image.shape[0]), range(source_image.shape[1])):
+        if source_image[i][j] >= high_threshold:
+            canny_image[i][j] = 255
+        elif source_image[i][j] <= low_threshold:
+            canny_image[i][j] = 0
+        else:
+            for ii, jj in itertools.product(range(-1), range(2)):
+                if (0 < (i + ii) < source_image.shape[0]) and (0 < (j + jj) < source_image.shape[1]):
+                    if source_image[i + ii][j + jj] >= high_threshold:
+                        count += 1
+                        if count >= 2:  # if 2 real edge aside
+                            canny_image[i][j] = 255
+                            count = 0
+                            break
+                    else:
+                        canny_image[i][j] = 0
+    print('done canny_edge_threshold')
+    return canny_image
+
+
+# Histogram Equalization
+def CountPixel(original_image, ArrayG, imageH, imageW):
+    for i in range(imageH - 1):  # use i as index of image to determine which pixels need to be filtered
+        for j in range(imageW - 1):  # use j as index of image to determine which pixels need to be filtered
+            ArrayG[original_image[i][j]] += 1  # count the corresponding pixel number in the image from 0 to 255
+    return ArrayG
+
+
+def Accumulate(Array):
+    AccumArray = [0] * 256
+    j = 0
+    for i in range(256):
+        AccumArray[i] = Array[i] + j  # accumulate the appear pixel
+        j = AccumArray[i]
+    return AccumArray
+
+
+def ImageHeq(original_image, ACPAG, imageH, imageW):
+    img_tmp = copy.deepcopy(original_image)
+    for i in range(imageH):
+        for j in range(imageW):
+            img_tmp[i][j] = ACPAG[img_tmp[i][j]] * 255  # do the histogram equalization
+
+    return img_tmp
+
+
+def Histogram_Equalization(source_image):
+    image_temp = copy.deepcopy(source_image)
+    IGray = [0] * 256  # initial the RGB value for counting the corresponding number of image
+    AcPAG = [0] * 256
+
+    CountPixel(image_temp, IGray, source_image.shape[0], source_image.shape[1])
+    EveryPAG = np.array(IGray) / (source_image.shape[0] * source_image.shape[1])
+    AcPAG = Accumulate(EveryPAG)  # accumulate the number of appear pixel for each channel
+
+    image_temp = ImageHeq(image_temp, AcPAG, source_image.shape[0],
+                          source_image.shape[1])  # do the histogram equalization
+    print('Histogram Done!')
+    return image_temp
+
+
+# main body
+def main():
+
+    gaussian_filter = gaussian_filter_creator()
+    gaussian_filter_size = gaussian_filter.shape
+    print('gaussian_filter_size:', gaussian_filter_size, 'sum', np.sum(gaussian_filter))
+
+    img_after_temp = conv_full_image(img_before_gray, gaussian_filter)
+    cv2.imwrite("img_after_gaussian.png", img_after_temp)
+
+    # img_after_hq = Histogram_Equalization(img_after_temp.astype(int))
+    # cv2.imwrite("img_after_hq.png", img_after_hq)
+
+    img_after_sobel_x = conv_full_image(img_after_temp, sobel_filter(0))
+    img_after_sobel_y = conv_full_image(img_after_temp, sobel_filter(90))
+    img_after_sobel_combine_x_y, img_after_sobel_combine_theta = sobel_calculation(img_after_sobel_x, img_after_sobel_y)
+    cv2.imwrite("img_after_sobel_x.png", img_after_sobel_x)
+    cv2.imwrite("img_after_sobel_y.png", img_after_sobel_y)
+    cv2.imwrite("img_after_sobel_combine_x_y.png", img_after_sobel_combine_x_y)
+
+    img_after_sharpen = sharpen_filter(img_before_gray)  # method 2 to get edge
+    cv2.imwrite("img_after_sharpen.png", img_after_sharpen)
+
+    # img_after_sobel_yx = conv_full_image(img_after_temp, sobel_filter(45))
+    # img_after_sobel_xy = conv_full_image(img_after_temp, sobel_filter(135))
+    # img_after_sobel_combine_yx_xy, img_after_sobel_combine_theta = sobel_calculation(img_after_sobel_yx, img_after_sobel_yx)
+    # cv2.imwrite("img_after_sobel_yx.png", img_after_sobel_yx)
+    # cv2.imwrite("img_after_sobel_xy.png", img_after_sobel_xy)
+    # cv2.imwrite("img_after_sobel_combine_yx_xy.png", img_after_sobel_combine_yx_xy)
+
+    # img_after_sobel_combine_final = np.zeros(img_after_temp.shape[0] * img_after_temp.shape[1])
+    # img_after_sobel_combine_final = img_after_sobel_combine_final.reshape(img_after_temp.shape[0] * img_after_temp.shape[1])
+    # img_after_sobel_combine_final = sobel_calculation(img_after_sobel_combine_yx_xy, img_after_sobel_combine_x_y)
+    # cv2.imwrite("img_after_sobel_combine_final.png", img_after_sobel_combine_final)
+
+    img_after_canny = canny_edge_detector(img_after_sobel_combine_x_y, img_after_sobel_combine_theta)
+    cv2.imwrite("img_after_canny.png", img_after_canny)
+
+    img_after_canny_threshold = canny_edge_threshold(img_after_canny, value3.get(), value4.get(), gaussian_filter)
+    cv2.imwrite("img_after_canny_threshold.png", img_after_canny_threshold)
+
+    print('done, please open image')
+
+
+def library_canny():
+    image_source = cv2.imread(read_image_before)
+    gray = cv2.cvtColor(image_source, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (value1.get(), value1.get()), 0)
+    img_after_library_canny = cv2.Canny(blurred, value3.get(), value4.get())
+    cv2.imwrite("img_after_library_canny.png", img_after_library_canny)
+
+    print('done library canny')
+
+
+# scale bar function
+lbl_title1 = tk.Scale(div1, label='Gaussian Filter', from_=3, to=9, orient=tk.HORIZONTAL,
+                      resolution=1, variable=value1, command=s_print)
+
+lbl_title3 = tk.Scale(div1, label='High threshold', from_=0, to=255, orient=tk.HORIZONTAL,
+                      resolution=5, variable=value3, command=s_print)
+
+lbl_title4 = tk.Scale(div1, label='Low threshold', from_=0, to=250, orient=tk.HORIZONTAL,
+                      resolution=5, variable=value4, command=s_print)
+
+lbl_title1.grid(column=0, row=1, sticky=align_mode)
+
+lbl_title3.grid(column=0, row=3, sticky=align_mode)
+lbl_title4.grid(column=0, row=4, sticky=align_mode)
+
+# create button
+btn1 = tk.Button(div4, text='Run', command=main).grid(column=0, row=1, sticky=align_mode)
+btn2 = tk.Button(div4, text='Run library_canny', command=library_canny).grid(column=0, row=2, sticky=align_mode)
+btn3 = tk.Button(div4, text='open before image', command=open_img_left).grid(column=0, row=3, sticky=align_mode)
+btn4 = tk.Button(div4, text='open after image', command=open_img_right).grid(column=0, row=4, sticky=align_mode)
+
+print('initial')
+
+window.mainloop()
